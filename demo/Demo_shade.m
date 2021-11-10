@@ -15,7 +15,7 @@ else
 end
 [mu0,phi0] = sunang(lat,lon,declin,omega);
 az = mean(phi0(:));
-fprintf('This code %s reproduces Fig. 4\n',mfilename);
+fprintf('This code %s reproduces Fig. 3\n',mfilename);
 fprintf('solar zenith %f\n',acosd(mean(mu0(:))))
 fprintf('solar azimuth %f counterclockwise from south\n',mean(phi0(:)))
 
@@ -37,7 +37,7 @@ shadeHorizon = sind(SForward.horzAng)>mu0;
 
 % image, shaded relief, shade by slope, shade by horizon
 % shaded relief
-figure('Name','Fig. 4 Shaded by slope or horizon')
+figure('Name','Fig. 3 Shaded by slope or horizon')
 ax = setAxes(R,true); %#ok<NASGU>
 X = zeros(size(Z));
 X(shadeSlope) = 1;

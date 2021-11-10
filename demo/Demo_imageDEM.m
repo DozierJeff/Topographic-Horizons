@@ -2,21 +2,24 @@ function et = Demo_imageDEM(Z,R)
 %images of DEM similar to Fig. 1
 
 % intrinsic coordinates
-[xI,yI] = meshgrid(1:R.RasterSize(2),1:R.RasterSize(1));
-[lat,lon] = intrinsicToGeographic(R,xI,yI);
+if verLessThan('map','5.1')
+    [xI,yI] = meshgrid(1:R.RasterSize(2),1:R.RasterSize(1));
+    [lat,lon] = intrinsicToGeographic(R,xI,yI);
+else
+    [lat,lon] = geographicGrid(R);
+end
 
 tic; % start the timer
 
 % image of the elevations
-figure('Name','Fig. 1 Elevation & Shaded Relief')
-subplot(1,2,1)
+figure('Name','Fig. 1 left Elevation')
 ax = setAxes(R,true); %#ok<NASGU>
 geoshow(double(Z),R,'DisplayType','surface');
 colormap(demcmap(double(Z)))
 colorbar('SouthOutside')
 
 % shaded relief
-subplot(1,2,2)
+figure('Name','Fig.1 right Shaded Relief')
 ax = setAxes(R,true); %#ok<NASGU>
 surflsrm(lat,lon,double(Z),[45 315])
 
