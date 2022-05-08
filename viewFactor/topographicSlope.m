@@ -106,13 +106,18 @@ if azimuthPreference
     aspect = 180-aspect;
 end
 % set flat areas aspect to zero, whereas gradientm returns NaN
-aspect(isnan(aspect)) = 0;
+aspect(slope==0) = 0;
+aspect(isnan(slope)) = NaN;
+aspect = single(aspect);
+slope = single(slope);
 
 % northern and eastern components of gradient
 if nargout>2
-    varargout{1} = gradN;
+    gradN(isnan(slope)) = NaN;
+    varargout{1} = single(gradN);
     if nargout>3
-        varargout{2} = gradE;
+        gradE(isnan(slope)) = NaN;
+        varargout{2} = single(gradE);
     end
 end
 end
