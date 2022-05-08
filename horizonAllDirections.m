@@ -26,8 +26,10 @@ function [A,H,varargout] = horizonAllDirections(Z,R,varargin)
 %   'planet' - applicable if and only if R is a GeographicCellsReference or
 %       GeographicPostingsReference object and does not contain a non-empty
 %       GeographicCRS field, default is 'earth' with a WGS84 ellipsoid
-%   'nHorz' - number of horizon directions, default 64, but adjusted
-%       to multiple of 4 otherwise
+%   'nHorz' - number of horizon directions over full circle, default 64,
+%       but adjusted to multiple of 4 otherwise
+%   'selectAng' - instead of full circle, vector of rotation angles to
+%       evaluate, overrides 'nHorz' if provided
 %   'parallel' - followed by 'profile' to parallelize along the columns of
 %       the rotated grid or by 'rotate' to run the suite of rotation angles
 %       in parallel, default '' in which case no parallel processing is
@@ -35,6 +37,8 @@ function [A,H,varargout] = horizonAllDirections(Z,R,varargin)
 %   'method' - argument for interpolation in the rotation of the grid,
 %       default 'nearest', other option in a future implementation might be
 %       'bilinear', but unintended effects cause it not to be implemented now
+%   'verbose' - if true, indicates when each rotation is done, default
+%       false
 % Output
 %   azm - vector of azimuths, 1 for each rotation angle in nHorz directions
 %   horzAng - 3-D horizons in BSQ (band-sequential) format, the 3rd dimension
@@ -52,12 +56,15 @@ function [A,H,varargout] = horizonAllDirections(Z,R,varargin)
 % azimuths either range over ±180° counter-clockwise with 0° south, or over
 % 0° to 360° clockwise with 0° north.
 
+% flag to return distances
+returnD = nargout>2;
+
 % defaults
 defaultH = 64;
 defaultPlanet = 'wgs84';
 defaultInterp = 'nearest';
 minargs = 2;
-maxargs = 12;
+maxargs = 16;
 narginchk(minargs,maxargs)
 
 p = inputParser;
@@ -69,6 +76,8 @@ addParameter(p,'proj',struct([]),@(x) isstruct(x) ||...
     contains(class(x),'projcrs'))
 addParameter(p,'parallel','',@ischar)
 addParameter(p,'method',defaultInterp,@ischar)
+addParameter(p,'verbose',false,@(x) islogical(x) || isnumeric(x))
+addParameter(p,'selectang',[],@(x) isnumeric(x) && isvector(x))
 parse(p,Z,R,varargin{:});
 
 E = referenceEllipsoid(p.Results.planet);
@@ -83,6 +92,9 @@ elseif strncmpi(p.Results.parallel,'rot',3)
 elseif ~isempty(p.Results.parallel)
     error('''parallel'' option ''%s'' not recognized',p.Results.parallel)
 end
+
+% verbose
+verbose = logical(p.Results.verbose);
 
 %other inputs
 nHorz = p.Results.nhorz;
@@ -109,26 +121,33 @@ else
 end
 
 % nHorz must be multiple of 4
-if nHorz<4
-    nHorz = 4;
-    warning('''nHorz'' must be >=4, set to 4')
-elseif mod(nHorz,4)~=0
-    nHorz = 4*ceil(nHorz/4);
-    warning('''nHorz'' must be a multiple of 4, set to %d',nHorz)
-end
+if isempty(p.Results.selectang)
+    if nHorz<4
+        nHorz = 4;
+        warning('''nHorz'' must be >=4, set to 4')
+    elseif mod(nHorz,4)~=0
+        nHorz = 4*ceil(nHorz/4);
+        warning('''nHorz'' must be a multiple of 4, set to %d',nHorz)
+    end
 
-% rotation angles, need just southern half of directions because horz2d
-% computes forward and backward
-ang = linspace(-90,90,1+nHorz/2);
-ang(1) = []; % 90 and -90 gotten on same rotation
+    % rotation angles, need just southern half of directions because horz2d
+    % computes forward and backward
+    ang = linspace(-90,90,1+nHorz/2);
+    ang(1) = []; % 90 and -90 gotten on same rotation
+else
+    ang = p.Results.selectang;
+    nHorz = length(ang);
+end
 
 % 3D arays to hold horizons in forward and backward directions for each azimuth
 HgridF = zeros(size(Z,1),size(Z,2),length(ang),'single');
 HgridB = zeros(size(HgridF),'like',HgridF);
 AvecF = zeros(length(nHorz),1);
-DgridF = zeros(size(HgridF),'like',HgridF);
-DgridB = zeros(size(HgridF),'like',HgridF);
 AvecB = zeros(length(nHorz),1);
+if returnD
+    DgridF = zeros(size(HgridF),'like',HgridF);
+    DgridB = zeros(size(HgridF),'like',HgridF);
+end
 
 % compute, depending on parallel option
 if useParallelAcrossRotations
@@ -138,15 +157,15 @@ if useParallelAcrossRotations
     % could be implemented
     if useLatLon
         if verLessThan('map','5.0')
-            passVals = {Z,R,useParallelAlongProfiles,method,E};
+            passVals = {Z,R,useParallelAlongProfiles,method,verbose,E};
         else
-            passVals = {Z,R,useParallelAlongProfiles,method};
+            passVals = {Z,R,useParallelAlongProfiles,method,verbose};
         end
     else
         if verLessThan('map','5.0')
-            passVals = {Z,R,useParallelAlongProfiles,method,proj};
+            passVals = {Z,R,useParallelAlongProfiles,method,verbose,proj};
         else
-            passVals = {Z,R,useParallelAlongProfiles,method};
+            passVals = {Z,R,useParallelAlongProfiles,method,verbose};
         end
     end
     W = parallel.pool.Constant(passVals);
@@ -155,16 +174,18 @@ if useParallelAcrossRotations
             pv = W.Value;
             if verLessThan('map','5.0')
                 [SF,SB] = horizonRotateLatLon(ang(h),pv{1},pv{2},pv{3},...
-                    'method',pv{4},'E',pv{5});
+                    'method',pv{4},'E',pv{6},'verbose',pv{5});
             else
                 [SF,SB] = horizonRotateLatLon(ang(h),pv{1},pv{2},pv{3},...
-                    'method',pv{4});
+                    'method',pv{4},'verbose',pv{5});
             end
 
             HgridF(:,:,h) = single(SF.horzAng);
             HgridB(:,:,h) = single(SB.horzAng);
-            DgridF(:,:,h) = single(SF.horzDis);
-            DgridB(:,:,h) = single(SB.horzDis);
+            if returnD
+                DgridF(:,:,h) = single(SF.horzDis);
+                DgridB(:,:,h) = single(SB.horzDis);
+            end
             AvecF(h) = SF.azm;
             AvecB(h) = SB.azm;
         end
@@ -173,15 +194,17 @@ if useParallelAcrossRotations
             pv = W.Value;
             if verLessThan('map','5.0')
                 [SF,SB] = horizonRotateProj(ang(h),pv{1},pv{2},pv{3},...
-                    'proj',pv{5},'method',pv{4});
+                    'proj',pv{6},'method',pv{4},'verbose',pv{5});
             else
                 [SF,SB] = horizonRotateProj(ang(h),pv{1},pv{2},pv{3},...
-                    'method',pv{4});
+                    'method',pv{4},'verbose',pv{5});
             end
             HgridF(:,:,h) = single(SF.horzAng);
             HgridB(:,:,h) = single(SB.horzAng);
-            DgridF(:,:,h) = single(SF.horzDis);
-            DgridB(:,:,h) = single(SB.horzDis);
+            if returnD
+                DgridF(:,:,h) = single(SF.horzDis);
+                DgridB(:,:,h) = single(SB.horzDis);
+            end
             AvecF(h) = SF.azm;
             AvecB(h) = SB.azm;
         end
@@ -191,15 +214,17 @@ else
         for h=1:length(ang)
             if verLessThan('map','5.0')
                 [SF,SB] = horizonRotateLatLon(ang(h),Z,R,useParallelAlongProfiles,...
-                    'E',E,'method',method);
+                    'E',E,'method',method,'verbose',verbose);
             else
                 [SF,SB] = horizonRotateLatLon(ang(h),Z,R,useParallelAlongProfiles,...
-                    'method',method);
+                    'method',method,'verbose',verbose);
             end
             HgridF(:,:,h) = single(SF.horzAng);
             HgridB(:,:,h) = single(SB.horzAng);
-            DgridF(:,:,h) = single(SF.horzDis);
-            DgridB(:,:,h) = single(SB.horzDis);
+            if returnD
+                DgridF(:,:,h) = single(SF.horzDis);
+                DgridB(:,:,h) = single(SB.horzDis);
+            end
             AvecF(h) = SF.azm;
             AvecB(h) = SB.azm;
         end
@@ -207,29 +232,40 @@ else
         for h=1:length(ang)
             if verLessThan('map','5.0')
                 [SF,SB] = horizonRotateProj(ang(h),Z,R,useParallelAlongProfiles,...
-                    'proj',proj,'method',method);
+                    'proj',proj,'method',method,'verbose',verbose);
             else
                 [SF,SB] = horizonRotateProj(ang(h),Z,R,useParallelAlongProfiles,...
-                    'method',method);
+                    'method',method,'verbose',verbose);
             end
             HgridF(:,:,h) = single(SF.horzAng);
             HgridB(:,:,h) = single(SB.horzAng);
-            DgridF(:,:,h) = single(SF.horzDis);
-            DgridB(:,:,h) = single(SB.horzDis);
+            if returnD
+                DgridF(:,:,h) = single(SF.horzDis);
+                DgridB(:,:,h) = single(SB.horzDis);
+            end
             AvecF(h) = SF.azm;
             AvecB(h) = SB.azm;
         end
     end
 end
 
+% gather list of variables to clear
+toClear = {'SF','SB','HgridF','HgridB'};
+if returnD
+    toClear = cat(2,toClear,{'DgridF','DgridB'});
+end
+
 %concatenate and sort by azimuths
-returnD = nargout>2;
 Hcat = cat(3,HgridF,HgridB);
-Dcat = cat(3,DgridF,DgridB);
+if returnD
+    Dcat = cat(3,DgridF,DgridB);
+end
 Acat = cat(2,AvecF,AvecB);
 [A,I] = sort(Acat);
 H = zeros(size(Hcat),'like',Hcat);
+toClear = cat(2,toClear,{'Hcat'});
 if returnD
+    toClear = cat(2,toClear,{'Dcat'});
     D = zeros(size(Dcat),'like',Dcat);
     for k=1:size(H,3)
         H(:,:,k) = Hcat(:,:,I(k));
@@ -242,6 +278,9 @@ else
         H(:,:,k) = Hcat(:,:,I(k));
     end
 end
+
+% to prevent memory error, get rid of variables no longer needed
+clear(toClear{:})
 
 % smooth 3D H & D
 kernelSize = round(max(3,length(A)/(128/5))); % 3x3x3 minimum, 5x5x5 if nHorz=128
