@@ -1,5 +1,6 @@
-function [outputFile] = writeHorizon(filename,R,azm,horizons,varargin)
+function [outputFile,varargout] = writeHorizon(filename,R,azm,horizons,varargin)
 % outputFile(s) = writeHorizon(filename,R,azm,horizons [,distances])
+% [outputfile [,Fhorizon,Fdistance] = writeHorizon(filename.mat,azm,horizons [,distances])
 %save horizons in format specified by filename:
 %options are geotiff, HDF 5, NetCDF 4, or MATLAB
 %if geotiff, only option is to read the whole file but then can be
@@ -36,6 +37,11 @@ function [outputFile] = writeHorizon(filename,R,azm,horizons,varargin)
 % 'GeoKeyDirectoryTag' - only if output file(s) in .tif format, and only if
 %   the program cannot figure out the projection or geographic parameters
 %   from the input raster reference object
+%
+%Output
+% returns the filename, (filename(s) if input is a .tif and distances are
+% wanted), and the interpolating functions if .mat and the optional outputs
+% are specified
 
 assert(~verLessThan('matlab','9.9'),...
     'this function works only on MATLAB R2020b or later')
@@ -88,28 +94,35 @@ if hdf5
 elseif geotiff
     outputFile = writegeotiff;
 elseif mat
-    outputFile = writeMAT;
+    [outputFile,F1,F2] = writeMAT;
+    if nargout>1
+        varargout{1} = F1;
+        if nargout>2
+            varargout{2} = F2;
+        end
+    end
 elseif netCDF
     outputFile = writeNetCDF;
 end
 
-    function matname=writeMAT()
+    function [matname,Fhorizon,Fdistance]=writeMAT()
         % file name should include 'horizon'
         [fpath,fname,xt] = fileparts(filename);
         fullname = fullfile(fpath,[fname xt]);
-        %create lookup function
-        [r,c,a] = ndgrid(1:size(horizons,1),1:size(horizons,2),azm);
-        Fhorizon = griddedInterpolant(r,c,a,horizons,'linear','nearest');
+        %create lookup function of the independent variables
+        ivar = {1:size(horizons,1),1:size(horizons,2),azm(:).'};
+        Fhorizon = griddedInterpolant(ivar,horizons,'linear','nearest');
         % same for distances
         if exist('distances','var')
             % interpolating function
-            Fdistance = griddedInterpolant(r,c,a,distances,'linear','nearest');
+            Fdistance = griddedInterpolant(ivar,distances,'linear','nearest');
         end
         % write file
         if exist('Fdistance','var')
             save(fullname,'-v7.3','R','Fhorizon','Fdistance')
         else
             save(fullname,'-v7.3','R','Fhorizon')
+            Fdistance = [];
         end
         matname = fullname;
     end
