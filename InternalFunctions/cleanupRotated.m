@@ -19,7 +19,7 @@ function [SForward,SBackward] = cleanupRotated(angleRotated,tmpS,R,method)
 %   column coordinates and uses their position in the rotated grid to fill
 %   values in the new grid of the same size as the original un-rotated.
 %   Missing values, which will consitute up to 18% for rotation of 45 deg,
-%   are filled in by coherent inpainting.
+%   are filled in by inpainting.
 
 % rows and columns of the orginal grid ne
 assert(strcmpi(method,'nearest'),...
@@ -50,18 +50,15 @@ for k=1:length(substruct)
             tmpOut(rr(j),rc(j)) = tmpV(j);
         end
         % inpainting of missing values
-        tfill = isnan(tmpOut);
+        tfill = isnan(tmpOut) & ~tmpS.origNaN;
         if any(tfill,'all')
             % fill-in mask can't be NaN, but none of the variables are negative
             % so can use a negative number to flag
-            tmpOut(tfill) = -100;
-            tmpOut = inpaintCoherent(tmpOut,tfill);
-            % use different method if we haven't got them all (usually we have)
-            tfill = tmpOut<0;
-            if any(tfill,'all')
-                tmpOut = regionfill(tmpOut,tfill);
-            end
+            tmpOut(tfill | tmpS.origNaN) = -1;
+            % regionfill instead of inpaintCoherent, seems less fussy
+            tmpOut = regionfill(tmpOut,tfill);
         end
+        tmpOut(tmpS.origNaN) = NaN;
         interpV = cat(3,interpV,tmpOut);
     end
 end

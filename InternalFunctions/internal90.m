@@ -5,6 +5,9 @@ assert(mod(angToRotate,90)==0,...
     'this routine only applies to rotation angles that are a multiple of 90 degrees, use internalHorizonPts instead')
 rk = round(angToRotate/90);
 
+% NaNs to preserve
+keepNaN = isnan(Z);
+
 if rk~=0
     lat = rot90(lat,rk);
     lon = rot90(lon,rk);
@@ -22,7 +25,7 @@ for iteration=1:2
     holdH = nan(size(lat)); % horizon angles
     holdA = nan(size(lat,2),2); % for mean azimuth along profile, 2nd column number of points
     holdDis = nan(size(lat)); % distances to horizons
-    
+
     % checks for version outside the loop for efficiency, at the expense of
     % more lines in the code, because these loops can run millions of times
     if useParallel
@@ -66,12 +69,12 @@ for iteration=1:2
             end
         end
     end
-    
+
     if iteration==2
         holdH = flipud(holdH);
         holdDis = flipud(holdDis);
     end
-    
+
     %rotate back
     if rk==0
         tmpS.horzAng = holdH;
@@ -80,7 +83,7 @@ for iteration=1:2
         tmpS.horzAng = rot90(holdH,-rk);
         tmpS.horzDis = rot90(holdDis,-rk);
     end
-    
+
     % weighted mean of the columwise azms
     if verLessThan('matlab','9.9')
         wt = holdA(:,2)/nansum(holdA(:,2)); %#ok<*NANSUM>
@@ -95,33 +98,26 @@ for iteration=1:2
     if ~azimuthPreference && tmpS.azm<0
         tmpS.azm = 360+tmpS.azm;
     end
-    
-    % take care of any NaNs
-    t = isnan(tmpS.horzAng);
+
+    % take care of any NaNs introduced by the process
+    % I used to call inpaintCoherent here, but regionfill seems less fussy
+    t = isnan(tmpS.horzAng) & ~keepNaN;
     if any(t,'all')
-        tmpS.horzAng(t) = 0;
-        tmpS.horzAng = inpaintCoherent(tmpS.horzAng,t);
-        % any NaN at edges
-        t = isnan(tmpS.horzAng);
-        if any(t,'all')
-            tmpS.horzAng = regionfill(tmpS.horzAng,t);
-        end
+        tmpS.horzAng(t|keepNan) = 0;
+        tmpS.horzAng = regionfill(tmpS.horzAng,t);
     end
-    t = isnan(tmpS.horzDis);
+    t = isnan(tmpS.horzDis) & ~keepNaN;
     if any(t,'all')
-        tmpS.horzDis(t) = 0;
-        tmpS.horzDis = inpaintCoherent(tmpS.horzDis,t);
-        % any NaN at edges
-        t = isnan(tmpS.horzDis);
-        if any(t,'all')
-            tmpS.horzDis = regionfill(tmpS.horzDis,t);
-        end
+        tmpS.horzDis(t|keepNaN) = 0;
+        tmpS.horzDis = regionfill(tmpS.horzDis,t);
     end
-    
+
     % single precision to conserve storage (datacubes can be large)
     tmpS.horzAng = single(tmpS.horzAng);
-    tmpS.horzDis = single(tmpS.horzDis);
-    
+    tmpS.horzDis = single(tmpS.horzDis);  
+    tmpS.horzAng(keepNaN) = NaN;
+    tmpS.horzDis(keepNaN) = NaN;
+
     if iteration==2
         SBackward = tmpS;
     else

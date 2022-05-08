@@ -4,6 +4,9 @@ assert(mod(angToRotate,90)~=0,...
     'rotation %f is a multiple of 90, use internal90 instead',angToRotate)
 assert(strcmpi(method,'nearest'),'method must be ''nearest'', others not implemented')
 
+%original NaN values in elevation
+origNaN = isnan(Z);
+
 %imrotate marks areas outsize the original grid as zeros, but data values
 %could also be zeros. With nearest-neighbor rotation, we can set zero
 %values in the data to a placeholder value (-Inf) and then reset after we
@@ -74,6 +77,7 @@ backDis = flipud(backDis);
 backA = flipud(backA);
 
 % variables to return
+S.origNaN = origNaN;
 S.lat = lat;
 S.lon = lon;
 S.Forward.horzAng = holdH;
