@@ -24,6 +24,8 @@ function [SForward,SBackward] = horizonRotateLatLon(angleToRotate,Z,R,useParalle
 %       field
 %   'method' - interpolation method for rotating the grid, 'nearest'
 %       (default) or 'bilinear'
+%   'verbose' - displays angle and azimuths of rotation during calculation
+%       (default false)
 %
 % Output, forward and backward structures with
 %   sin of horizon angles
@@ -44,6 +46,7 @@ addParameter(p,'E',referenceEllipsoid('wgs84'),...
     @(x) contains(class(x),'referenceEllipsoid') ||...
     (isnumeric(x) && length(x)==2))
 addParameter(p,'method','nearest',@ischar)
+addParameter(p,'verbose',false,@(x) islogical(x) || isnumeric(x))
 parse(p,angleToRotate,Z,R,useParallel,varargin{:})
 
 assert(nnz(isnan(Z))<numel(Z),'oops, the whole Z matrix is NaN');
@@ -52,6 +55,7 @@ angleToRotate = p.Results.angleToRotate;
 Z = p.Results.Z;
 R = p.Results.R;
 useParallel = logical(p.Results.useParallel);
+verbose = logical(p.Results.verbose);
 method = p.Results.method;
 assert(strcmpi(method,'nearest'),...
     '''method'' ''nearest'' is currently the only one supported, ''bilinear'' is problematic')
@@ -84,5 +88,8 @@ else
         refEllipsoid,useParallel,method);
     % cleanup rotated back to original grid
     [SForward,SBackward] = cleanupRotated(angleToRotate,tmpS,R,method);
+end
+if verbose
+    fprintf('rotation %f, azimuths %f %f\n',angleToRotate,SForward.azm,SBackward.azm);
 end
 end

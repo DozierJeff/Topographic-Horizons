@@ -22,6 +22,8 @@ function [SForward,SBackward] = horizonRotateProj(angToRotate,Z,R,useParallel,va
 %       information is in the R.ProjectedCRS field
 %   'method' - interpolation method for rotating the grid, 'nearest'
 %       (default) or 'bilinear'
+%   'verbose' - displays angle and azimuths of rotation during calculation
+%       (default false)
 %
 % Output
 %   Structures for the forward and backward directions, with fields
@@ -40,6 +42,7 @@ addRequired(p,'useParallel',@(x) isscalar(x) &&...
     (islogical(x) || isnumeric(x)))
 addParameter(p,'proj',struct([]),@(x) contains(class(x),'projcrs') || isstruct(x))
 addParameter(p,'method','nearest',@ischar)
+addParameter(p,'verbose',false,@(x) islogical(x) || isnumeric(x))
 parse(p,angToRotate,Z,R,useParallel,varargin{:})
 
 assert(nnz(isnan(Z))<numel(Z),'oops, the whole Z matrix is NaN');
@@ -50,6 +53,7 @@ angToRotate = p.Results.angToRotate;
 Z = p.Results.Z;
 R = p.Results.R;
 useParallel = logical(p.Results.useParallel);
+verbose = logical(p.Results.verbose);
 method = p.Results.method;
 
 % latitudes and longitudes of the input grid
@@ -79,5 +83,7 @@ else
         refEllipsoid,useParallel,method);
     [SForward,SBackward] = cleanupRotated(angToRotate,tmpS,R,method);
 end
-
+if verbose
+    fprintf('rotation %f, azimuths %f %f\n',angToRotate,SForward.azm,SBackward.azm);
+end
 end

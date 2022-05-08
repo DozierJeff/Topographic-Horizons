@@ -6,7 +6,7 @@ function [angToRotate,fwdAz,backAz] = rotationAngleFromAzimuth(desiredAzimuth,ra
 %
 %Input
 % desiredAzimuth - degrees, either +/-180 or 0 to 360, depending on how
-%   function azimuthPreference is set
+%   function azimuthPreference is set, can be a vector
 % rasterref - of the input grid, can be either Map or Geographic
 %Third input, name/value pair
 % if rasterref is a Map object but ProjectedCRS field is empty
@@ -22,8 +22,8 @@ function [angToRotate,fwdAz,backAz] = rotationAngleFromAzimuth(desiredAzimuth,ra
 %   or 0 to 360 depending on return value from function azimuthPreference
 
 p = inputParser;
-addRequired(p,'desiredAzimuth',@(x) isscalar(x) && isnumeric(x) &&...
-    x>=-180 && x<=360)
+addRequired(p,'desiredAzimuth',@(x) isvector(x) && isnumeric(x) &&...
+    all(x>=-180) && all(x<=360))
 addRequired(p,'rasterref',@(x) contains(class(x),'rasterref'))
 addParameter(p,validatestring('projection',{'proj','projection'}),...
     struct([]),@(x) isstruct(x) || isempty(x))
@@ -84,22 +84,27 @@ else
     [lat,lon] = projinv(proj,x,y);
 end
 
-% get good start guess
-rot0 = guessRotation(lat,lon,azm,E);
-
 % solve for rotation angle
-[angToRotate,solvedDiff,exitflag,output] = fzero(@azmDiff,rot0); %#ok<ASGLU>
-assert(exitflag==1,'fzero did not converge on a solution')
-solvedAz = solvedDiff+azm;
-if azimuthPreference
-    solvedAz = 180-solvedAz;
+angToRotate = zeros(length(azm),1);
+fwdAz = zeros(size(angToRotate));
+backAz = zeros(size(fwdAz));
+for k=1:length(azm)
+    % get good start guess
+    thisAzm = azm(k);
+    rot0 = guessRotation(lat,lon,thisAzm,E);
+    [angToRotate(k),solvedDiff,exitflag,output] = fzero(@azmDiff,rot0); %#ok<ASGLU>
+    assert(exitflag==1,'fzero did not converge on a solution')
+    solvedAz = solvedDiff+thisAzm;
+    if azimuthPreference
+        solvedAz = 180-solvedAz;
+    end
+    fwdAz(k) = solvedAz;
+    backAz(k) = solvedAz-180;
 end
-fwdAz = solvedAz;
-backAz = solvedAz-180;
 
     function rotDiff=azmDiff(rotAng)
         azmRot = meanAzimuth(rotAng);
-        rotDiff = (azmRot-azm);
+        rotDiff = (azmRot-thisAzm);
     end
 
     function azmR = meanAzimuth(rotationAngle)
