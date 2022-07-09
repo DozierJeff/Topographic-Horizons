@@ -282,8 +282,11 @@ end
 % to prevent memory error, get rid of variables no longer needed
 clear(toClear{:})
 
-% smooth 3D H & D
-kernelSize = round(max(3,length(A)/(128/5))); % 3x3x3 minimum, 5x5x5 if nHorz=128
+% smooth 3D H & D, making sure kernelSize is odd and is <= 7
+kernelSize = round(max(3,min(7,length(A)/(128/5)))); % 3x3x3 minimum, 5x5x5 if nHorz=128
+if mod(kernelSize,2)==0
+    kernelSize = kernelSize+1;
+end
 H = smooth3(H,'gaussian',kernelSize);
 if returnD
     D = smooth3(D,'gaussian',kernelSize);
